@@ -1,5 +1,8 @@
 # Build it button
 
+<img width="1150" alt="Screenshot 2023-11-17 at 2 38 14 PM" src="https://github.com/jordansinger/build-it-figma-ai/assets/110813/885bc2a1-cd34-41c7-b36b-ed1d5783e453">
+
+
 Draw and sketch UI in Figma and FigJam with this widget.
 
 Make sure to replace `OPENAI_API_KEY` with your API key.
