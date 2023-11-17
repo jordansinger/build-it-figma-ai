@@ -1,0 +1,12 @@
+<script>
+  onmessage = function (e) {
+    let message = e.data.pluginMessage;
+
+    if (message.type == "renderHTML") {
+      let html = message.html;
+      document.open();
+      document.write(html);
+      document.close();
+    }
+  };
+</script>
