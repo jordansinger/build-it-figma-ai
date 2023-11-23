@@ -1,7 +1,7 @@
 import { OPENAI_API_KEY, drag } from "./helpers";
 
 const { widget } = figma;
-const { useEffect, Text, AutoLayout, useSyncedState } = widget;
+const { useEffect, Text, AutoLayout, useSyncedState, Input } = widget;
 
 const systemPrompt = `You are an expert web developer who specializes in tailwind css.
 A user will provide you with a low-fidelity wireframe of an application. 
@@ -18,10 +18,17 @@ Use JavaScript modules and unkpkg to import any necessary dependencies.
 
 Respond ONLY with the contents of the html file.`;
 
+const OPENAI_USER_PROMPT_WITH_PREVIOUS_DESIGN = 'Here are the latest wireframes including some notes on your previous work. Could you make a new website based on these wireframes and notes and send back just the html file?'
+const OPENAI_USER_PROMPT = 'Here are the latest wireframes. Could you make a new website based on these wireframes and notes and send back just the html file?'
+
 export async function getHtmlFromOpenAI({
   image,
+  history = [],
+  prompt
 }: {
   image: string;
+  history: string[];
+  prompt?: string;
 }): Promise<any> {
   const body: GPT4VCompletionRequest = {
     model: "gpt-4-vision-preview",
@@ -32,6 +39,7 @@ export async function getHtmlFromOpenAI({
         role: "system",
         content: systemPrompt,
       },
+      
       {
         role: "user",
         content: [
@@ -44,8 +52,19 @@ export async function getHtmlFromOpenAI({
           },
           {
             type: "text",
-            text: "Turn this into a single html file using tailwind.",
+            text: "Here are the latest wireframes. Could you make a new vue website based on these wireframes and notes and send back just the html file? " + (prompt || ""),
           },
+          {
+						type: 'text',
+						text: `${
+							history.length ? OPENAI_USER_PROMPT_WITH_PREVIOUS_DESIGN : OPENAI_USER_PROMPT
+						}`,
+					},
+          ...history.map((html) => ({
+            type: "text",
+            text: html,
+          } as { type: "text"; text: string })) // Add explicit type annotation
+          
         ],
       },
     ],
@@ -130,6 +149,8 @@ export type GPT4VCompletionRequest = {
 function Widget() {
   // maintain loading state
   const [loading, setLoading] = useSyncedState("loading", false);
+  const [history, setHistory] = useSyncedState("history", new Array<string>());
+  const [prompt, setPrompt] = useSyncedState("prompt", "");
 
   const makeReal = async () => {
     if (!loading) {
@@ -157,8 +178,11 @@ function Widget() {
 
       await getHtmlFromOpenAI({
         image: base64,
+        history,
+        prompt
       }).then((json) => {
         setLoading(false);
+        console.log(json)
         const message = json.choices[0].message.content;
         const start = message.indexOf("<!DOCTYPE html>");
         const end = message.indexOf("</html>");
@@ -166,8 +190,10 @@ function Widget() {
 
         // insert drag before </html>
         const insertIndex = html.indexOf("</html>");
-        html = html.slice(0, insertIndex) + drag + html.slice(insertIndex);
         console.log(html);
+        html = html.slice(0, insertIndex) + drag + html.slice(insertIndex);
+
+        setHistory([...history, html]);
 
         // show UI of HTML response
         figma.showUI(__html__, { width: 800, height: 600 });
@@ -189,24 +215,102 @@ function Widget() {
     };
   });
 
+  const handleTextClick = async (text: string) => {
+    figma.showUI(__html__, { width: 800, height: 600 });
+
+    figma.ui.postMessage({
+      type: "copy",
+      text: text,
+    });
+
+    figma.ui.postMessage({
+      type: "renderHTML",
+      html: text
+    });
+    figma.notify("Text copied!");
+    
+  };
+  const clearHistory = () => {
+    setHistory([]);
+    setPrompt("");
+  }
+  const openPreview = async () => {
+    if (history.length) {
+      // show UI of HTML response
+      figma.showUI(__html__, { width: 800, height: 600 });
+      // post message to UI
+      figma.ui.postMessage({
+        type: "renderHTML",
+        html: history[history.length - 1],
+      });
+    }
+  }
   return (
     <AutoLayout
-      width={256}
-      height={40}
-      horizontalAlignItems="center"
-      verticalAlignItems="center"
-      cornerRadius={13}
-      fill={loading ? "#D9D9D9" : "#0D99FF"}
-      onClick={
-        () =>
-          new Promise((resolve) => {
-            makeReal();
-          })
-      }
+      width={500}
+      height={800}
+      padding={10}
+      direction="vertical"
+      fill="#000000"
+      verticalAlignItems="end"
+      spacing={10}
     >
-      <Text fontSize={12} fontWeight={500} fill={"#fff"}>
-        {loading ? "Loading..." : "✨ Build it"}
-      </Text>
+        <AutoLayout width={480} overflow="scroll" spacing={10} direction="vertical">
+        {history.map((html: string) => (
+            <AutoLayout width={480} fill="#464646" padding={10}   key={html}  onClick={() => new Promise((resolve) => { handleTextClick(html) })}>
+              <Text fontSize={10} width={480} fill="#fff" >
+                {html.slice(0, 100)}
+              </Text>
+            </AutoLayout>
+          ))}
+        </AutoLayout>
+     
+      <Input
+        value={prompt}
+        placeholder="Add Prompt"
+        onTextEditEnd={(e) => {
+          setPrompt(e.characters);
+        }}
+        fontSize={18}
+        fill="#7f1d1d"
+        width={480}
+        inputFrameProps={{
+          fill: "#fff",
+          stroke: "#eee",
+          cornerRadius: 16,
+          padding: 10,
+        }}
+        inputBehavior="wrap"
+      />
+      <AutoLayout width={480} direction="horizontal" spacing={10}>
+        <AutoLayout width={50} height={40} horizontalAlignItems="center"
+          cornerRadius={13}
+          verticalAlignItems="center" direction="horizontal" spacing={10} fill="#333333">
+          <Text fontSize={14} fontWeight={500} fill={"#fff"} onClick={clearHistory}>🗑️</Text>
+        </AutoLayout>
+        <AutoLayout width={50} height={40} horizontalAlignItems="center"
+          cornerRadius={13}
+          verticalAlignItems="center" direction="horizontal" spacing={10} fill="#333333">
+          <Text fontSize={14} fontWeight={500} fill={"#fff"} onClick={() => new Promise((resolve) => { openPreview() })}>👓</Text>
+        </AutoLayout>
+        <AutoLayout
+          width={"fill-parent"}
+          height={40}
+          horizontalAlignItems="center"
+          verticalAlignItems="center"
+          cornerRadius={13}
+          fill={loading ? "#D9D9D9" : "#0D99FF"}
+          onClick={() =>
+            new Promise((resolve) => {
+              makeReal();
+            })
+          }
+        >
+          <Text fontSize={18} fontWeight={500} fill={"#fff"}>
+            {loading ? "Loading..." : "✨ Build it"}
+          </Text>
+        </AutoLayout>
+      </AutoLayout>
     </AutoLayout>
   );
 }
